@@ -2,6 +2,7 @@ mod components;
 mod map_builder;
 mod resources;
 mod systems;
+mod ui;
 mod utils;
 
 mod prelude {
@@ -21,6 +22,7 @@ mod prelude {
     pub use crate::map_builder::*;
     pub use crate::resources::*;
     pub use crate::systems::*;
+    pub use crate::ui::*;
     pub use crate::utils::*;
 }
 
@@ -41,25 +43,32 @@ fn setup(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut texture_atlases: ResMut<Assets<TextureAtlas>>,
+    turn_state: Res<State<TurnState>>,
+    mut next_state: ResMut<NextState<TurnState>>,
 ) {
-    println!("try assets");
-    // Setup the sprite sheet
-    let texture_handle = asset_server.load("terminal8x8_transparent.png");
-    let texture_atlas =
-        TextureAtlas::from_grid(texture_handle, Vec2::new(8.0, 8.0), 16, 16, None, None);
-    let texture_atlas_handle = texture_atlases.add(texture_atlas);
+    if *turn_state.get() == TurnState::LoadAssets {
+        println!("try assets");
+        // Setup the sprite sheet
+        let texture_handle = asset_server.load("terminal8x8_transparent.png");
+        let texture_atlas =
+            TextureAtlas::from_grid(texture_handle, Vec2::new(8.0, 8.0), 16, 16, None, None);
+        let texture_atlas_handle = texture_atlases.add(texture_atlas);
 
-    // add sprite atlas as resource
-    commands.insert_resource(CharsetAsset {
-        atlas: texture_atlas_handle.clone(),
-    });
+        // add sprite atlas as resource
+        commands.insert_resource(CharsetAsset {
+            atlas: texture_atlas_handle.clone(),
+        });
 
-    let mut cam = Camera2dBundle::default();
-    cam.transform.scale = Vec3::new(0.5, 0.5, 1.0);
-    let cam_x = convert_pos(0.0, SCREEN_WIDTH as f32 * 10.0, SCREEN_WIDTH as f32);
-    let cam_y = convert_pos(0.0, SCREEN_HEIGHT as f32 * 10.0, SCREEN_HEIGHT as f32);
-    cam.transform.translation = Vec3::new(cam_x, cam_y, 999.0);
-    commands.spawn((MainCamera, cam));
+        let mut cam = Camera2dBundle::default();
+        cam.transform.scale = Vec3::new(0.5, 0.5, 1.0);
+        // let cam_x = convert_pos(0.0, SCREEN_WIDTH as f32 * 10.0, SCREEN_WIDTH as f32);
+        // let cam_y = convert_pos(0.0, SCREEN_HEIGHT as f32 * 10.0, SCREEN_HEIGHT as f32);
+        // cam.transform.translation = Vec3::new(cam_x, cam_y, 999.0);
+        commands.spawn((MainCamera, cam));
+
+        // update turn state
+        next_state.set(TurnState::StartScreen)
+    }
 }
 
 fn main() {
@@ -77,10 +86,12 @@ fn main() {
                     ..Default::default()
                 }),
         )
+        .add_state::<TurnState>()
+        .add_systems(Startup, setup)
         .add_plugins(MapPlugin)
         .add_plugins(SystemsPlugin)
+        .add_plugins(UIPlugin)
         .insert_resource(ClearColor(Color::rgb(0.0, 0.0, 0.0)))
-        .add_systems(Startup, setup)
         .add_systems(PostUpdate, (position_translation, size_scaling))
         .run()
 }

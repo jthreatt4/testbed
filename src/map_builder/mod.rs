@@ -3,8 +3,23 @@ use bracket_lib::prelude::Rect;
 
 mod map;
 pub use map::*;
+mod themes;
+use rand::Rng;
+pub use themes::*;
+mod rooms;
+use rooms::RoomsArchitect;
+mod automata;
+use automata::CellularAutomataArchitect;
 
 const NUM_ROOMS: usize = 5;
+
+trait MapArchitect {
+    fn new(&mut self) -> MapBuilder;
+}
+
+pub trait MapTheme: Sync + Send {
+    fn tile_to_render(&self, tile_type: TileType) -> Option<Glyph>;
+}
 
 #[derive(Resource)]
 pub struct MapBuilder {
@@ -12,31 +27,121 @@ pub struct MapBuilder {
     walls: Vec<Rect>,
     rooms: Vec<Rect>,
     pub player_start: Position,
-    // pub enemies_start: Vec<Position>,
+    pub enemies_start: Vec<Position>,
     // pub amulet_start: Position,
-    // pub theme:Box<dyn MapTheme>,
+    pub theme: Box<dyn MapTheme>,
 }
 
 impl MapBuilder {
     pub fn new() -> Self {
-        let mut mb = MapBuilder {
-            map: Map::new(),
-            walls: Vec::new(),
-            rooms: Vec::new(),
-            player_start: Position { x: 0, y: 0, z: 0 },
-        };
-        mb
+        let mut architect: Box<dyn MapArchitect> = Box::new(RoomsArchitect {});
+        // let mut architect: Box<dyn MapArchitect> = Box::new(CellularAutomataArchitect {});
+        architect.new()
     }
 
-    fn fill() {}
+    // used to place the goal square
+    fn find_most_distant() {}
 
-    fn buid_random_rooms() {}
+    fn fill(&mut self, tile: TileType) {
+        self.map.tiles.iter_mut().for_each(|t| *t = tile);
+    }
 
-    fn apply_horizontal_tunnel_walls() {}
+    fn buid_random_rooms(&mut self) {
+        let mut rng = rand::thread_rng();
 
-    fn apply_vertical_tunnel_walls() {}
+        while self.rooms.len() < NUM_ROOMS {
+            let room = Rect::with_size(
+                rng.gen_range(2..SCREEN_WIDTH - 12),
+                rng.gen_range(2..SCREEN_HEIGHT - 12),
+                rng.gen_range(2..12),
+                rng.gen_range(2..12),
+            );
+            let mut overlap = false;
+            for r in self.rooms.iter() {
+                if r.intersect(&room) {
+                    overlap = true;
+                }
+            }
+            if !overlap {
+                let wall = Rect::with_exact(room.x1 - 1, room.y1 - 1, room.x2 + 1, room.y2 + 1);
+                // First make the floor space that will be the room
+                room.for_each(|p| {
+                    if p.x > 0 && p.x < SCREEN_WIDTH && p.y > 0 && p.y < SCREEN_HEIGHT {
+                        let idx = map_idx(p.x, p.y);
+                        self.map.tiles[idx] = TileType::Floor;
+                    }
+                });
 
-    fn build_corridors() {}
+                wall.for_each(|p| {
+                    if p.x > 0 && p.x < SCREEN_WIDTH && p.y > 0 && p.y < SCREEN_HEIGHT {
+                        let idx = map_idx(p.x, p.y);
+                        if self.map.tiles[idx] == TileType::Void {
+                            self.map.tiles[idx] = TileType::Wall;
+                        }
+                    }
+                });
+                self.rooms.push(room);
+                self.walls.push(wall);
+            }
+        }
+    }
+
+    fn apply_horizontal_tunnel_walls(&mut self, x1: i32, x2: i32, y: i32) {
+        use std::cmp::{max, min};
+        for x in min(x1, x2)..=max(x1, x2) {
+            if let Some(idx) = self.map.try_idx(Position { x, y, z: 0 }) {
+                self.map.tiles[idx as usize] = TileType::Floor;
+            }
+            if let Some(idx) = self.map.try_idx(Position { x, y: y - 1, z: 0 }) {
+                if self.map.tiles[idx as usize] == TileType::Void {
+                    self.map.tiles[idx as usize] = TileType::Wall;
+                }
+            }
+            if let Some(idx) = self.map.try_idx(Position { x, y: y + 1, z: 0 }) {
+                if self.map.tiles[idx as usize] == TileType::Void {
+                    self.map.tiles[idx as usize] = TileType::Wall;
+                }
+            }
+        }
+    }
+
+    fn apply_vertical_tunnel_walls(&mut self, y1: i32, y2: i32, x: i32) {
+        use std::cmp::{max, min};
+        for y in min(y1, y2)..=max(y1, y2) {
+            if let Some(idx) = self.map.try_idx(Position { x, y, z: 0 }) {
+                self.map.tiles[idx as usize] = TileType::Floor;
+            }
+            if let Some(idx) = self.map.try_idx(Position { x: x - 1, y, z: 0 }) {
+                if self.map.tiles[idx as usize] == TileType::Void {
+                    self.map.tiles[idx as usize] = TileType::Wall;
+                }
+            }
+            if let Some(idx) = self.map.try_idx(Position { x: x + 1, y, z: 0 }) {
+                if self.map.tiles[idx as usize] == TileType::Void {
+                    self.map.tiles[idx as usize] = TileType::Wall;
+                }
+            }
+        }
+    }
+
+    fn build_corridors(&mut self) {
+        let mut rng = rand::thread_rng();
+        let mut rooms = self.rooms.clone();
+        rooms.sort_by(|a, b| a.center().x.cmp(&b.center().x));
+
+        for (i, room) in rooms.iter().enumerate().skip(1) {
+            let prev = rooms[i - 1].center();
+            let new = room.center();
+
+            if rng.gen_range(0..2) == 1 {
+                self.apply_horizontal_tunnel_walls(prev.x, new.x, prev.y);
+                self.apply_vertical_tunnel_walls(prev.y, new.y, new.x);
+            } else {
+                self.apply_vertical_tunnel_walls(prev.y, new.y, prev.x);
+                self.apply_horizontal_tunnel_walls(prev.x, new.x, new.y);
+            }
+        }
+    }
 
     pub fn entity_occupy_tile(&mut self, entity: Entity, position: Position) {
         let idx = map_idx(position.x, position.y);
@@ -54,9 +159,82 @@ impl MapBuilder {
         self.map.occupation[old_idx] = None;
         self.map.occupation[new_idx] = Some(entity);
     }
+
+    fn spawn_monsters(&self, start: &Position) -> Vec<Position> {
+        const NUM_MONSTERS: usize = 50;
+        let mut rng = rand::thread_rng();
+
+        let mut spawnable_tiles: Vec<Position> = self
+            .map
+            .tiles
+            .iter()
+            .enumerate()
+            .filter(|(idx, t)| {
+                **t == TileType::Floor
+                    && DistanceAlg::Pythagoras
+                        .distance2d((*start).into(), self.map.index_to_point2d(*idx))
+                        > 10.0
+            })
+            .map(|(idx, _)| self.map.index_to_point2d(idx))
+            .map(|point| point.into())
+            .collect();
+
+        let mut spawns = Vec::new();
+        for _ in 0..NUM_MONSTERS {
+            let target_index = rng.gen_range(0..spawnable_tiles.len());
+            spawns.push(spawnable_tiles[target_index].clone());
+            spawnable_tiles.remove(target_index);
+        }
+        spawns
+    }
+
+    fn count_neighbors(&self, x: i32, y: i32, map: &Map) -> usize {
+        let mut neighbors = 0;
+        for iy in -1..=1 {
+            for ix in -1..=1 {
+                if !(ix == 0 && iy == 0) && map.tiles[map_idx(x + ix, y + iy)] == TileType::Wall {
+                    neighbors += 1;
+                }
+            }
+        }
+        neighbors
+    }
+
+    fn wall_around_boundary(&mut self) {
+        for y in 0..SCREEN_HEIGHT {
+            let mut idx = map_idx(0, y);
+            self.map.tiles[idx] = TileType::Wall;
+            idx = map_idx(SCREEN_WIDTH - 1, y);
+            self.map.tiles[idx] = TileType::Wall;
+        }
+        for x in 0..SCREEN_WIDTH {
+            let mut idx = map_idx(x, 0);
+            self.map.tiles[idx] = TileType::Wall;
+            idx = map_idx(x, SCREEN_HEIGHT - 1);
+            self.map.tiles[idx] = TileType::Wall;
+        }
+    }
+
+    fn clean_walls_replace_with_void(&mut self) {
+        let mut new_tiles = self.map.tiles.clone();
+        for y in 1..SCREEN_HEIGHT - 1 {
+            for x in 1..SCREEN_WIDTH - 1 {
+                let neighbors = self.count_neighbors(x, y, &(self.map));
+                let idx = map_idx(x, y);
+                if neighbors == 8 {
+                    new_tiles[idx] = TileType::Void;
+                }
+            }
+        }
+        self.map.tiles = new_tiles;
+    }
 }
 
-pub fn build_map(mut commands: Commands, player_q: Query<&Player>) {
+pub fn build_map(
+    mut commands: Commands,
+    player_q: Query<&Player>,
+    mut next_state: ResMut<NextState<TurnState>>,
+) {
     // create map
     let mut mb = MapBuilder::new();
 
@@ -66,6 +244,7 @@ pub fn build_map(mut commands: Commands, player_q: Query<&Player>) {
 pub struct MapPlugin;
 impl Plugin for MapPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, build_map);
+        app.add_systems(OnEnter(TurnState::StartScreen), build_map);
+        app.add_systems(OnExit(TurnState::StartScreen), spawn_map_tiles);
     }
 }

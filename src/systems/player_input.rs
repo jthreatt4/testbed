@@ -54,6 +54,9 @@ pub fn player_input(
 pub struct PlayerInputPlugin;
 impl Plugin for PlayerInputPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, player_input);
+        app.add_systems(
+            Update,
+            (player_input,).run_if(in_state(TurnState::AwaitingInput)),
+        );
     }
 }
