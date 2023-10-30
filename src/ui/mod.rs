@@ -1,6 +1,8 @@
 use crate::prelude::*;
 
 mod splash_screen;
+mod hud;
+mod tooltips;
 
 #[derive(Component)]
 pub struct TopUINode;
@@ -20,6 +22,8 @@ pub struct UIPlugin;
 impl Plugin for UIPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup)
-            .add_plugins(splash_screen::MenuPlugin);
+            .add_plugins(splash_screen::MenuPlugin)
+            .add_plugins(hud::HudPlugin)
+            .add_plugins(tooltips::TooltipsPlugin);
     }
 }

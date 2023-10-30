@@ -34,8 +34,8 @@ pub struct MapBuilder {
 
 impl MapBuilder {
     pub fn new() -> Self {
-        let mut architect: Box<dyn MapArchitect> = Box::new(RoomsArchitect {});
-        // let mut architect: Box<dyn MapArchitect> = Box::new(CellularAutomataArchitect {});
+        // let mut architect: Box<dyn MapArchitect> = Box::new(RoomsArchitect {});
+        let mut architect: Box<dyn MapArchitect> = Box::new(CellularAutomataArchitect {});
         architect.new()
     }
 

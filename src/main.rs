@@ -61,9 +61,6 @@ fn setup(
 
         let mut cam = Camera2dBundle::default();
         cam.transform.scale = Vec3::new(0.5, 0.5, 1.0);
-        // let cam_x = convert_pos(0.0, SCREEN_WIDTH as f32 * 10.0, SCREEN_WIDTH as f32);
-        // let cam_y = convert_pos(0.0, SCREEN_HEIGHT as f32 * 10.0, SCREEN_HEIGHT as f32);
-        // cam.transform.translation = Vec3::new(cam_x, cam_y, 999.0);
         commands.spawn((MainCamera, cam));
 
         // update turn state
